@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -44,7 +45,7 @@
     flex-shrink:0;
   }
   #channelBar .chName{
-    font-weight:500; font-size:14px; color:#fff;
+    font-weight:bold; font-size:14px; color:#fff;
     text-shadow:0 0 6px rgba(0,229,255,0.5);
     flex:1;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -94,7 +95,7 @@
     margin:0 0 6px; font-size:22px; color:var(--accent);
     text-shadow:0 0 10px rgba(255,204,0,0.6);
   }
-  #msg p{margin:4px 0 14px; font-size:12.5px; opacity:0.9; line-height:1.45;}
+  #msg p{margin:4px 0 14px; font-size:13px; opacity:0.85; line-height:1.5;}
   #msg button{
     background:linear-gradient(180deg,#ffdd55,#e6a800);
     border:none; color:#221900; font-weight:bold;
@@ -148,24 +149,14 @@
       </div>
       <div id="msg">
         <h1 id="msgTitle">🎲 CUBO PINBALL</h1>
-        <p id="msgText">
-        <b style="color:#00e5ff;">🖥️ NO COMPUTADOR</b><br>
-        ← e → controlam os flippers.<br>
-        Segure <b>ESPAÇO</b> para carregar o lançamento e solte para lançar a bola.<br>
-        Pressione <b>P</b> para pausar.<br><br>
-
-        <b style="color:#00e5ff;">📱 NO CELULAR</b><br>
-        Toque e segure o <b>lado esquerdo</b> ou <b>lado direito</b> para acionar os flippers.<br>
-        Toque e segure a <b>área da pista de lançamento</b> à direita e solte para lançar a bola.<br>
-        Use o botão <b>⏸ pausar</b> para pausar o jogo.<br><br>
-
-        🎯 Acerte os alvos, para-choques e rollovers para fazer pontos!<br>
-        <b style="color:#ffd700;">🔎 Encontre o logo escondido no topo da mesa: +2.500 pontos!</b>
-      </p>
+        <p id="msgText">Setas ← → ou toque nas laterais da tela para os flippers.<br>
+        Espaço / toque no centro-baixo para lançar a bola.<br>
+        Acerte os alvos e para-choques para pontuar!<br>
+        <b style="color:#ffd700;">🔎 Ache o logo escondido no topo da mesa: vale pontuação extra!</b></p>
         <button id="startBtn">JOGAR</button>
       </div>
     </div>
-    <div id="footer">🖥️ PC: ← → flippers · ESPAÇO lança · P pausa &nbsp; | &nbsp; 📱 Celular: toque nas laterais · toque na pista para lançar</div>
+    <div id="footer">← → flippers · espaço lança a bola · P pausa</div>
   </div>
 </div>
 
@@ -320,9 +311,19 @@ function buildBumpers(){
     {x:290, y:180, r:26, hitT:0, color:'#00e5ff', score:100},
     {x:220, y:290, r:26, hitT:0, color:'#ffcc00', score:100},
     {x:180, y:350, r:22, hitT:0, color:'#aa55ff', score:120},
+    {x:80,  y:150, r:18, hitT:0, color:'#00ffaa', score:90},
+    {x:360, y:140, r:18, hitT:0, color:'#ff8800', score:90},
+    {x:60,  y:260, r:18, hitT:0, color:'#ff00aa', score:90},
+    {x:380, y:250, r:18, hitT:0, color:'#aaff00', score:90},
+    {x:130, y:300, r:18, hitT:0, color:'#3388ff', score:90},
+    {x:300, y:320, r:18, hitT:0, color:'#ff5533', score:90},
+    {x:260, y:380, r:18, hitT:0, color:'#ff66cc', score:90},
+    {x:350, y:380, r:18, hitT:0, color:'#ccff00', score:90},
+    {x:100, y:380, r:18, hitT:0, color:'#00ccff', score:90},
+    {x:200, y:150, r:18, hitT:0, color:'#cc66ff', score:90},
     // Hidden logo bumper: tucked high in the center, past the rollovers —
     // a tricky, precise shot straight up the middle. Worth big points.
-    {x:W/2, y:52, r:21, hitT:0, color:'#ffd700', score:2500, isLogo:true, cooldown:0},
+    {x:W/2, y:55, r:18, hitT:0, color:'#ffd700', score:1000, isLogo:true},
   ];
 }
 
@@ -517,78 +518,92 @@ function update(){
 
   // gravity
   ball.vy += GRAVITY;
-  // speed cap
-  const sp = Math.hypot(ball.vx,ball.vy);
-  const maxSp = 24;
-  if(sp>maxSp){ ball.vx *= maxSp/sp; ball.vy *= maxSp/sp; }
+  // speed cap — raised now that collisions are resolved in sub-steps below,
+  // so a fast ball can no longer tunnel through a thin wall or slip past a
+  // flipper in a single frame (that tunneling was the real cause of the
+  // ball "falling through the sides").
+  const sp0 = Math.hypot(ball.vx,ball.vy);
+  const maxSp = 34;
+  if(sp0>maxSp){ ball.vx *= maxSp/sp0; ball.vy *= maxSp/sp0; }
 
-  ball.x += ball.vx;
-  ball.y += ball.vy;
+  // Move in several small sub-steps, resolving every collision after each
+  // one, instead of moving the full distance in one jump.
+  const totalSp = Math.hypot(ball.vx,ball.vy);
+  const subSteps = Math.max(1, Math.ceil(totalSp/6));
+  const stepVx = ball.vx/subSteps, stepVy = ball.vy/subSteps;
 
-  // wall collisions
-  for(const w of walls){
-    const [d,cx,cy] = circleSegDist(ball.x,ball.y,w.x1,w.y1,w.x2,w.y2);
-    if(d < ball.r){
-      let nx = ball.x-cx, ny = ball.y-cy;
-      [nx,ny] = norm(nx,ny);
-      const overlap = ball.r-d;
-      ball.x += nx*overlap; ball.y += ny*overlap;
-      let [rvx,rvy] = reflect(ball.vx,ball.vy,nx,ny);
-      ball.vx = rvx*0.78; ball.vy = rvy*0.78;
-      if(Math.hypot(rvx,rvy) > 2) Sound.wall();
-    }
-  }
+  for(let step=0; step<subSteps; step++){
+    ball.x += stepVx; ball.y += stepVy;
 
-  // bumpers
-  for(const b of bumpers){
-    const dx = ball.x-b.x, dy = ball.y-b.y;
-    const dist = Math.hypot(dx,dy);
-    if(dist < b.r+ball.r){
-      const [nx,ny] = norm(dx,dy);
-      const overlap = (b.r+ball.r)-dist;
-      ball.x += nx*overlap; ball.y += ny*overlap;
-      const kick = b.isLogo ? 8 : 6.5;
-      ball.vx = nx*kick + ball.vx*0.3;
-      ball.vy = ny*kick + ball.vy*0.3;
-      b.hitT = 1;
-      bumpScore(b.score);
-      addFlash(b.x,b.y,'+'+b.score,b.color);
-      if(b.isLogo){ Sound.logoHit(); screenFlash = 1; addFlash(b.x,b.y-28,'LOGO BONUS +2500','#ffd700'); }
-      else { Sound.bumper(); screenFlash = Math.max(screenFlash, 0.35); }
-    }
-  }
-
-  // slingshots
-  for(const s of slingshots){
-    const p = s.pts;
-    for(let i=0;i<3;i++){
-      const x1=p[i][0],y1=p[i][1],x2=p[(i+1)%3][0],y2=p[(i+1)%3][1];
-      const [d,cx,cy] = circleSegDist(ball.x,ball.y,x1,y1,x2,y2);
-      if(d<ball.r+2){
-        let nx=ball.x-cx, ny=ball.y-cy; [nx,ny]=norm(nx,ny);
-        const overlap=(ball.r+2)-d;
-        ball.x+=nx*overlap; ball.y+=ny*overlap;
-        ball.vx = nx*9 + s.nx*3;
-        ball.vy = ny*9 + s.ny*3 - 4;
-        s.hitT = 1;
-        bumpScore(60);
-        addFlash(ball.x,ball.y,'+60','#ff8800');
-        Sound.sling();
+    // wall collisions
+    for(const w of walls){
+      const [d,cx,cy] = circleSegDist(ball.x,ball.y,w.x1,w.y1,w.x2,w.y2);
+      if(d < ball.r){
+        let nx = ball.x-cx, ny = ball.y-cy;
+        [nx,ny] = norm(nx,ny);
+        const overlap = ball.r-d;
+        ball.x += nx*overlap; ball.y += ny*overlap;
+        let [rvx,rvy] = reflect(ball.vx,ball.vy,nx,ny);
+        ball.vx = rvx*0.78; ball.vy = rvy*0.78;
+        if(Math.hypot(rvx,rvy) > 2) Sound.wall();
       }
     }
-  }
 
-  // targets
-  for(const t of targets){
-    if(ball.x+ball.r>t.x && ball.x-ball.r<t.x+t.w && ball.y+ball.r>t.y && ball.y-ball.r<t.y+t.h){
-      if(ball.x < t.x) ball.x = t.x-ball.r;
-      else ball.x = t.x+t.w+ball.r;
-      ball.vx *= -0.9;
-      t.hitT = 1;
-      bumpScore(t.score);
-      addFlash(t.x,t.y,'+'+t.score,'#00ff88');
-      Sound.target();
+    // bumpers
+    for(const b of bumpers){
+      const dx = ball.x-b.x, dy = ball.y-b.y;
+      const dist = Math.hypot(dx,dy);
+      if(dist < b.r+ball.r){
+        const [nx,ny] = norm(dx,dy);
+        const overlap = (b.r+ball.r)-dist;
+        ball.x += nx*overlap; ball.y += ny*overlap;
+        const kick = b.isLogo ? 8 : 6.5;
+        ball.vx = nx*kick + ball.vx*0.3;
+        ball.vy = ny*kick + ball.vy*0.3;
+        b.hitT = 1;
+        bumpScore(b.score);
+        addFlash(b.x,b.y,'+'+b.score,b.color);
+        if(b.isLogo){ Sound.logoHit(); screenFlash = 1; }
+        else { Sound.bumper(); screenFlash = Math.max(screenFlash, 0.35); }
+      }
     }
+
+    // slingshots
+    for(const s of slingshots){
+      const p = s.pts;
+      for(let i=0;i<3;i++){
+        const x1=p[i][0],y1=p[i][1],x2=p[(i+1)%3][0],y2=p[(i+1)%3][1];
+        const [d,cx,cy] = circleSegDist(ball.x,ball.y,x1,y1,x2,y2);
+        if(d<ball.r+2){
+          let nx=ball.x-cx, ny=ball.y-cy; [nx,ny]=norm(nx,ny);
+          const overlap=(ball.r+2)-d;
+          ball.x+=nx*overlap; ball.y+=ny*overlap;
+          ball.vx = nx*9 + s.nx*3;
+          ball.vy = ny*9 + s.ny*3 - 4;
+          s.hitT = 1;
+          bumpScore(60);
+          addFlash(ball.x,ball.y,'+60','#ff8800');
+          Sound.sling();
+        }
+      }
+    }
+
+    // targets
+    for(const t of targets){
+      if(ball.x+ball.r>t.x && ball.x-ball.r<t.x+t.w && ball.y+ball.r>t.y && ball.y-ball.r<t.y+t.h){
+        if(ball.x < t.x) ball.x = t.x-ball.r;
+        else ball.x = t.x+t.w+ball.r;
+        ball.vx *= -0.9;
+        t.hitT = 1;
+        bumpScore(t.score);
+        addFlash(t.x,t.y,'+'+t.score,'#00ff88');
+        Sound.target();
+      }
+    }
+
+    // flippers
+    collideFlipper(leftFlipper);
+    collideFlipper(rightFlipper);
   }
 
   // rollovers
@@ -607,10 +622,6 @@ function update(){
       }
     }
   }
-
-  // flippers collision
-  collideFlipper(leftFlipper);
-  collideFlipper(rightFlipper);
 
   // ball lost
   if(ball.y > H+30){
@@ -648,11 +659,13 @@ function collideFlipper(f){
     [nx,ny] = norm(nx,ny);
     const overlap = (ball.r+flipR)-d;
     ball.x += nx*overlap; ball.y += ny*overlap;
-    // flipper motion contributes velocity
-    const flipSpeed = f.up ? 14 : 4;
+    // flipper motion contributes velocity — this is the main "hit power":
+    // a bigger flipSpeed and multiplier here means a much stronger, more
+    // satisfying launch off the flippers.
+    const flipSpeed = f.up ? 26 : 5;
     let [rvx,rvy] = reflect(ball.vx,ball.vy,nx,ny);
-    ball.vx = rvx*0.5 + nx*flipSpeed*0.6;
-    ball.vy = rvy*0.5 + ny*flipSpeed*0.6 - (f.up?3:0);
+    ball.vx = rvx*0.4 + nx*flipSpeed*0.9;
+    ball.vy = rvy*0.4 + ny*flipSpeed*0.9 - (f.up?7:0);
     if(f.up) Sound.flipper();
   }
 }
@@ -695,7 +708,7 @@ function render(){
 
   // launcher lane divider
   ctx.strokeStyle = '#556';
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(W-MARGIN-LANE_W, H-40); ctx.lineTo(W-MARGIN-LANE_W, TOP_Y);
   ctx.stroke();
@@ -734,7 +747,7 @@ function render(){
       // Small glowing ring behind the logo, brighter when just hit.
       ctx.save();
       ctx.shadowColor = '#ffd700';
-      ctx.shadowBlur = 18 + glow*34;
+      ctx.shadowBlur = 14 + glow*30;
       ctx.beginPath();
       ctx.arc(b.x,b.y,b.r+3,0,Math.PI*2);
       ctx.strokeStyle = `rgba(255,215,0,${0.7+glow*0.3})`;
